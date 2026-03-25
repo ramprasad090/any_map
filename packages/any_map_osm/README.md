@@ -1,39 +1,33 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# any_map_osm
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
-
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
-
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+OpenStreetMap adapter for [any_map](https://pub.dev/packages/any_map) using flutter_map. Free, open-source tile rendering with no API key required.
 
 ## Features
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
-
-## Getting started
-
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
+- Declarative overlay rendering (markers, polylines, polygons, circles)
+- Camera control: animateCamera, moveCamera, fitBounds
+- Custom tile URL template support
+- Polygon holes support
+- Supports Android, iOS, Web, macOS, Windows, Linux
 
 ## Usage
 
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
-
 ```dart
-const like = 'sample';
+import 'package:any_map/any_map.dart';
+import 'package:any_map_osm/any_map_osm.dart';
+
+AnyMapWidget(
+  adapter: OsmAdapter(),
+  initialCamera: AnyCameraPosition(
+    target: AnyLatLng(17.3850, 78.4867),
+    zoom: 12,
+  ),
+  markers: [
+    AnyMarker(id: 'pin', position: AnyLatLng(17.3616, 78.4747), title: 'Charminar'),
+  ],
+)
 ```
 
-## Additional information
+## License
 
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+MIT

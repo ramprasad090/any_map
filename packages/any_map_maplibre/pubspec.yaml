@@ -25,8 +25,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  any_map:
-    path: ../any_map
+  any_map: ^0.1.0
   maplibre_gl: ^0.25.0
 
 dev_dependencies:

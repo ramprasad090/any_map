@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' show Point;
 import 'dart:ui' as ui;
 
 import 'package:any_map/any_map.dart';
+import 'package:flutter/painting.dart' show EdgeInsets;
 import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 
 /// AnyMapController implementation backed by MapLibre GL.
@@ -14,6 +16,21 @@ class MapLibreController implements AnyMapController {
   final Map<String, ml.Line> _lineMap = {};
   final Map<String, ml.Fill> _fillMap = {};
   final Map<String, ml.Circle> _circleMap = {};
+
+  final _cameraStreamController = StreamController<AnyCameraPosition>.broadcast();
+  final _boundsStreamController = StreamController<AnyLatLngBounds>.broadcast();
+
+  @override
+  Stream<AnyCameraPosition> get cameraPositionStream => _cameraStreamController.stream;
+
+  @override
+  Stream<AnyLatLngBounds> get visibleBoundsStream => _boundsStreamController.stream;
+
+  /// Called by the adapter's onCameraIdle to push camera updates into the streams.
+  void notifyCameraChanged(AnyCameraPosition pos, AnyLatLngBounds bounds) {
+    if (!_cameraStreamController.isClosed) _cameraStreamController.add(pos);
+    if (!_boundsStreamController.isClosed) _boundsStreamController.add(bounds);
+  }
 
   /// Access the underlying MapLibre controller for advanced operations
   /// like adding 3D extrusion layers, custom sources, etc.
@@ -318,6 +335,61 @@ class MapLibreController implements AnyMapController {
     return ui.Offset(point.x.toDouble(), point.y.toDouble());
   }
 
+  // ── Polyline Animation ──
+
+  /// Progressively draws [polyline] point-by-point over [duration].
+  @override
+  Future<void> animatePolyline(
+    AnyPolyline polyline, {
+    Duration duration = const Duration(seconds: 1),
+  }) async {
+    final pts = polyline.points;
+    if (pts.length < 2) return;
+    final stepMs = duration.inMilliseconds ~/ (pts.length - 1);
+    for (var i = 2; i <= pts.length; i++) {
+      final partial = AnyPolyline(
+        id: polyline.id,
+        points: pts.sublist(0, i),
+        color: polyline.color,
+        width: polyline.width,
+      );
+      await removePolylines([polyline.id]);
+      await addPolylines([partial]);
+      await Future<void>.delayed(Duration(milliseconds: stepMs));
+    }
+  }
+
+  // ── Snapshot ──
+
+  /// Captures the map as a [ui.Image]. Returns null if unavailable.
+  @override
+  Future<ui.Image?> takeSnapshot() async {
+    // MapLibre GL does not expose a snapshot API in this Dart wrapper.
+    return null;
+  }
+
+  // ── fitBoundsWithInsets ──
+
+  /// Fits the camera to [bounds] with per-side [insets].
+  @override
+  Future<void> fitBoundsWithInsets(
+    AnyLatLngBounds bounds, {
+    EdgeInsets insets = const EdgeInsets.all(48),
+  }) async {
+    await controller.animateCamera(
+      ml.CameraUpdate.newLatLngBounds(
+        ml.LatLngBounds(
+          southwest: _toMlLatLng(bounds.southwest),
+          northeast: _toMlLatLng(bounds.northeast),
+        ),
+        left: insets.left,
+        right: insets.right,
+        top: insets.top,
+        bottom: insets.bottom,
+      ),
+    );
+  }
+
   // ── Style ──
 
   /// Changes the map style at runtime using the given [style].
@@ -370,7 +442,8 @@ class MapLibreController implements AnyMapController {
   /// Disposes of native resources; the MapLibre controller is disposed by the widget.
   @override
   void dispose() {
-    // MapLibre controller is disposed by the widget.
+    _cameraStreamController.close();
+    _boundsStreamController.close();
   }
 
   // ── Helpers ──

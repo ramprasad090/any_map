@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/painting.dart' show EdgeInsets;
 import 'package:any_map/any_map.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
@@ -7,6 +9,20 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 class GoogleMapController implements AnyMapController {
   final gm.GoogleMapController controller;
   final AnyMapStyle? _initialStyle;
+
+  final _cameraStreamController = StreamController<AnyCameraPosition>.broadcast();
+  final _boundsStreamController = StreamController<AnyLatLngBounds>.broadcast();
+
+  @override
+  Stream<AnyCameraPosition> get cameraPositionStream => _cameraStreamController.stream;
+
+  @override
+  Stream<AnyLatLngBounds> get visibleBoundsStream => _boundsStreamController.stream;
+
+  /// Push a camera update into the reactive streams (call from onCameraMove).
+  void notifyCameraChanged(AnyCameraPosition pos) {
+    if (!_cameraStreamController.isClosed) _cameraStreamController.add(pos);
+  }
 
   GoogleMapController({
     required this.controller,
@@ -148,6 +164,44 @@ class GoogleMapController implements AnyMapController {
     return ui.Offset(coord.x.toDouble(), coord.y.toDouble());
   }
 
+  // ── fitBoundsWithInsets ──
+
+  @override
+  Future<void> fitBoundsWithInsets(
+    AnyLatLngBounds bounds, {
+    EdgeInsets insets = const EdgeInsets.all(48),
+  }) async {
+    // Google Maps only supports a single uniform padding value.
+    final padding = (insets.left + insets.right + insets.top + insets.bottom) / 4;
+    await controller.animateCamera(
+      gm.CameraUpdate.newLatLngBounds(
+        gm.LatLngBounds(
+          southwest: gm.LatLng(bounds.southwest.latitude, bounds.southwest.longitude),
+          northeast: gm.LatLng(bounds.northeast.latitude, bounds.northeast.longitude),
+        ),
+        padding,
+      ),
+    );
+  }
+
+  // ── Polyline Animation ──
+
+  @override
+  Future<void> animatePolyline(
+    AnyPolyline polyline, {
+    Duration duration = const Duration(seconds: 1),
+  }) async {
+    // Google overlays are declarative; animation is handled at the widget level.
+  }
+
+  // ── Snapshot ──
+
+  @override
+  Future<ui.Image?> takeSnapshot() async {
+    // google_maps_flutter does not expose a snapshot API in this version.
+    return null;
+  }
+
   // ── Style ──
 
   @override
@@ -159,6 +213,8 @@ class GoogleMapController implements AnyMapController {
 
   @override
   void dispose() {
+    _cameraStreamController.close();
+    _boundsStreamController.close();
     controller.dispose();
   }
 }

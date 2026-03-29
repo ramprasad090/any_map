@@ -1,6 +1,6 @@
 name: any_map_maplibre
 description: "MapLibre GL adapter for any_map. Free, open-source map rendering with 3D buildings, vector tiles, and no API key required."
-version: 0.1.0
+version: 1.0.0
 homepage: https://github.com/ramprasad090/any_map
 repository: https://github.com/ramprasad090/any_map/tree/main/packages/any_map_maplibre
 issue_tracker: https://github.com/ramprasad090/any_map/issues
@@ -25,7 +25,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  any_map: ^0.1.0
+  any_map: ^1.0.0
   maplibre_gl: ^0.25.0
 
 dev_dependencies:

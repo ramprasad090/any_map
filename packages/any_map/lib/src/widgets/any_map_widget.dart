@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../controllers/map_controller.dart';
+import '../errors/map_error.dart';
 import '../models/models.dart';
 
 /// Callback when the map is created and ready.
@@ -87,6 +88,25 @@ class AnyMapWidget extends StatelessWidget {
   /// Maximum zoom level.
   final double? maxZoom;
 
+  /// Called when the map backend reports an error.
+  ///
+  /// Use this to surface style-load failures, tile errors, or initialisation
+  /// problems to the user without crashing the widget tree.
+  ///
+  /// ```dart
+  /// AnyMapWidget(
+  ///   adapter: ...,
+  ///   onError: (err) {
+  ///     if (err.type == AnyMapErrorType.styleLoadFailed) {
+  ///       ScaffoldMessenger.of(context).showSnackBar(
+  ///         SnackBar(content: Text(err.message)),
+  ///       );
+  ///     }
+  ///   },
+  /// )
+  /// ```
+  final ValueChanged<AnyMapError>? onError;
+
   const AnyMapWidget({
     super.key,
     required this.adapter,
@@ -111,6 +131,7 @@ class AnyMapWidget extends StatelessWidget {
     this.rotateGesturesEnabled = true,
     this.minZoom,
     this.maxZoom,
+    this.onError,
   });
 
   @override

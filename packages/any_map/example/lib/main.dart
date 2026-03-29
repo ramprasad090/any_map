@@ -111,6 +111,34 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
   Timer? _animTimer;
   double _animProgress = 0;
 
+  // Marker popup
+  AnyMarker? _selectedMarker;
+
+  // Camera stream — live zoom display
+  StreamSubscription<AnyCameraPosition>? _cameraSub;
+  double _liveZoom = 12.0;
+
+  // Simulated location (Feature 2 demo)
+  bool _showLocationLayer = false;
+  Timer? _simLocTimer;
+  _SimLocationProvider? _simLocProvider;
+
+  // Distance Matrix demo
+  bool _matrixLoading = false;
+  String? _matrixResult;
+
+  // Nearby POI demo
+  bool _nearbyLoading = false;
+  List<AnyMarker> _nearbyMarkers = [];
+
+  // Route Optimizer demo
+  bool _optimizerLoading = false;
+  AnyOptimizedRoute? _optimizedRoute;
+
+  // Map Matching demo
+  bool _matcherLoading = false;
+  List<AnyPolyline> _matchedPolylines = [];
+
   // Demo circles around landmarks
   final _demoCircles = const [
     AnyCircle(id: 'circle_charminar', center: AnyLatLng(17.3616, 78.4747), radius: 400, fillColor: Color(0x3300BCD4), strokeColor: Color(0xFF00BCD4), strokeWidth: 2),
@@ -181,6 +209,11 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
     if (_backend == MapBackend.maplibre && c is MapLibreController) {
       c.enable3DBuildings();
     }
+    // Feature 1: subscribe to camera stream for live zoom badge
+    _cameraSub?.cancel();
+    _cameraSub = c.cameraPositionStream.listen((pos) {
+      if (mounted) setState(() => _liveZoom = pos.zoom);
+    });
   }
 
   // ── Search ──
@@ -337,6 +370,7 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
         SwitchListTile(title: const Text('Polygon (Old City area)'), subtitle: const Text('AnyPolygon — pink outlined region'), value: _showPolygons, onChanged: (v) { setSheetState(() {}); setState(() => _showPolygons = v); }),
         SwitchListTile(title: const Text('Clustering (60 markers)'), subtitle: const Text('AnyClusterEngine — grouped markers'), value: _showClustering, onChanged: (v) { setSheetState(() {}); setState(() => _showClustering = v); }),
         SwitchListTile(title: const Text('GeoJSON (Metro line)'), subtitle: const Text('AnyGeoJsonLayer — parsed from JSON'), value: _showGeoJson, onChanged: (v) { setSheetState(() {}); setState(() { _showGeoJson = v; _applyGeoJson(); }); }),
+        SwitchListTile(title: const Text('User Location Layer'), subtitle: const Text('AnyUserLocationLayer — pulsing dot + heading'), value: _showLocationLayer, onChanged: (v) { setSheetState(() {}); _toggleLocationLayer(v); }),
         if (_route != null) SwitchListTile(title: const Text('Animate route drawing'), subtitle: const Text('AnyAnimatedPolyline — progressive draw'), value: _animatingPolyline, onChanged: (v) { setSheetState(() {}); setState(() => _animatingPolyline = v); if (v) { _startAnimatePolyline(); } else { _stopAnimatePolyline(); } }),
       ]));
     }));
@@ -356,6 +390,246 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
         _allMarkers = _allMarkers.where((m) => !m.id.startsWith('metro')).toList();
       });
     }
+  }
+
+  // ── Location Layer (Feature 2) ──
+
+  void _toggleLocationLayer(bool v) {
+    setState(() => _showLocationLayer = v);
+    if (v) {
+      _simLocProvider = _SimLocationProvider(center: _hyderabadCenter);
+      _simLocProvider!.startUpdates();
+    } else {
+      _simLocTimer?.cancel();
+      _simLocProvider?.dispose();
+      _simLocProvider = null;
+    }
+  }
+
+  // ── Distance Matrix ──
+
+  Future<void> _showDistanceMatrix() async {
+    setState(() { _matrixLoading = true; _matrixResult = null; });
+    final matrix = AnyDistanceMatrix();
+    final origins = _landmarks.take(3).map((m) => m.position).toList();
+    final dests = _landmarks.skip(2).take(3).map((m) => m.position).toList();
+    final result = await matrix.calculate(origins: origins, destinations: dests);
+    if (!mounted) return;
+    setState(() => _matrixLoading = false);
+    if (!result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Matrix failed: ${result.error}')));
+      return;
+    }
+    final rows = <String>[];
+    for (var i = 0; i < origins.length; i++) {
+      final cells = result.matrix[i].map((c) => c.durationText ?? '–').join(' | ');
+      rows.add('${_landmarks[i].title}: $cells');
+    }
+    setState(() => _matrixResult = rows.join('\n'));
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Distance Matrix'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Origins: Charminar, HITEC, Hussain Sagar\nDestinations: Hussain Sagar, Golconda, Ramoji', style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 8),
+        Text(_matrixResult ?? '', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+    ));
+  }
+
+  // ── Nearby POI ──
+
+  Future<void> _findNearbyPlaces(AnyPlaceType type) async {
+    setState(() => _nearbyLoading = true);
+    final places = AnyPlaces();
+    final results = await places.nearby(location: _hyderabadCenter, type: type, radius: 1000, limit: 10);
+    if (!mounted) return;
+    final markers = results.map((p) => AnyMarker(
+      id: 'poi_${p.id}',
+      position: p.position,
+      title: p.name,
+      snippet: '${p.distanceText ?? ''} ${p.openingHours != null ? '• ${p.openingHours}' : ''}',
+    )).toList();
+    setState(() { _nearbyMarkers = markers; _nearbyLoading = false; _allMarkers = [..._landmarks, ...markers]; });
+    if (markers.isEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No results found nearby')));
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Found ${markers.length} ${type.name} nearby')));
+    }
+  }
+
+  void _clearNearby() => setState(() { _nearbyMarkers = []; _allMarkers = List.of(_landmarks); });
+
+  // ── Route Optimizer ──
+
+  Future<void> _optimizeRoute() async {
+    setState(() { _optimizerLoading = true; _optimizedRoute = null; });
+    final stops = _landmarks.take(4).map((m) => m.position).toList();
+    final optimizer = AnyRouteOptimizer();
+    final result = await optimizer.optimize(stops: stops);
+    if (!mounted) return;
+    setState(() => _optimizerLoading = false);
+    if (!result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Optimizer failed: ${result.error}')));
+      return;
+    }
+    setState(() {
+      _optimizedRoute = result;
+      _polylines = [..._polylines.where((p) => !p.id.startsWith('opt_')), result.toPolyline(id: 'opt_route')];
+    });
+    if (result.bounds != null) _controller?.fitBoundsWithInsets(result.bounds!, insets: const EdgeInsets.all(64));
+    final orderStr = result.waypointOrder
+        .where((i) => i < _landmarks.length)
+        .map((i) => _landmarks[i].title ?? 'Stop $i')
+        .join(' → ');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Optimized: ${result.durationText} • ${result.distanceText}\nOrder: $orderStr'),
+      duration: const Duration(seconds: 4),
+    ));
+  }
+
+  // ── Map Matching ──
+
+  Future<void> _runMapMatching() async {
+    setState(() => _matcherLoading = true);
+    // Simulate noisy GPS trace along Charminar → HITEC City road
+    final rawTrace = [
+      AnyGpsPoint(position: const AnyLatLng(17.3620, 78.4750), timestamp: 1700000000, accuracy: 20),
+      AnyGpsPoint(position: const AnyLatLng(17.3700, 78.4710), timestamp: 1700000030, accuracy: 25),
+      AnyGpsPoint(position: const AnyLatLng(17.3800, 78.4680), timestamp: 1700000060, accuracy: 20),
+      AnyGpsPoint(position: const AnyLatLng(17.3900, 78.4500), timestamp: 1700000090, accuracy: 30),
+      AnyGpsPoint(position: const AnyLatLng(17.4000, 78.4200), timestamp: 1700000120, accuracy: 20),
+      AnyGpsPoint(position: const AnyLatLng(17.4200, 78.4000), timestamp: 1700000150, accuracy: 25),
+      AnyGpsPoint(position: const AnyLatLng(17.4400, 78.3800), timestamp: 1700000180, accuracy: 20),
+    ];
+    final matcher = AnyMapMatcher();
+    final result = await matcher.match(rawTrace);
+    if (!mounted) return;
+    setState(() => _matcherLoading = false);
+    if (!result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Matching failed: ${result.error}')));
+      return;
+    }
+    final rawPoly = AnyPolyline(id: 'raw_gps', points: rawTrace.map((p) => p.position).toList(), color: const Color(0xFFFF9800), width: 3);
+    final snappedPoly = result.toPolyline(id: 'snapped');
+    setState(() => _matchedPolylines = [rawPoly, snappedPoly]);
+    setState(() => _polylines = [..._polylines.where((p) => !p.id.startsWith('raw_') && !p.id.startsWith('snapped')), rawPoly, snappedPoly]);
+    final conf = result.confidence != null ? ' (${(result.confidence! * 100).round()}% confidence)' : '';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Snapped to road$conf — orange=raw GPS, purple=snapped')));
+  }
+
+  void _clearMatching() {
+    setState(() {
+      _matchedPolylines = [];
+      _polylines = _polylines.where((p) => !p.id.startsWith('raw_') && !p.id.startsWith('snapped') && !p.id.startsWith('opt_')).toList();
+    });
+  }
+
+  // ── Advanced Features Sheet ──
+
+  void _showAdvancedSheet() {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setSheetState) {
+      return DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        maxChildSize: 0.85,
+        minChildSize: 0.3,
+        expand: false,
+        builder: (_, scrollCtrl) => SingleChildScrollView(
+          controller: scrollCtrl,
+          child: Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Text('Advanced Features', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+
+            // Distance Matrix
+            _advancedCard(
+              icon: Icons.grid_on,
+              title: 'Distance Matrix',
+              subtitle: 'OSRM Table API — 3×3 travel-time grid in one call',
+              isLoading: _matrixLoading,
+              onTap: () { Navigator.pop(ctx); _showDistanceMatrix(); },
+            ),
+
+            // Nearby POI
+            _advancedCard(
+              icon: Icons.place_outlined,
+              title: 'Nearby Places (Overpass)',
+              subtitle: 'Find hospitals, restaurants, ATMs near Hyderabad',
+              isLoading: _nearbyLoading,
+              trailing: _nearbyMarkers.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { Navigator.pop(ctx); _clearNearby(); }) : null,
+              onTap: null,
+              child: Wrap(spacing: 6, runSpacing: 4, children: [
+                for (final type in [AnyPlaceType.hospital, AnyPlaceType.restaurant, AnyPlaceType.atm, AnyPlaceType.fuelStation, AnyPlaceType.pharmacy, AnyPlaceType.hotel])
+                  ActionChip(
+                    label: Text(type.name, style: const TextStyle(fontSize: 11)),
+                    onPressed: _nearbyLoading ? null : () { Navigator.pop(ctx); _findNearbyPlaces(type); },
+                  ),
+              ]),
+            ),
+
+            // Route Optimizer
+            _advancedCard(
+              icon: Icons.route,
+              title: 'Route Optimizer (TSP)',
+              subtitle: 'OSRM Trip API — optimal order for 4 Hyderabad stops',
+              isLoading: _optimizerLoading,
+              trailing: _optimizedRoute != null ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { Navigator.pop(ctx); _clearMatching(); }) : null,
+              onTap: () { Navigator.pop(ctx); _optimizeRoute(); },
+            ),
+
+            // Map Matching
+            _advancedCard(
+              icon: Icons.timeline,
+              title: 'GPS Map Matching',
+              subtitle: 'OSRM Match API — snap noisy GPS trace to roads',
+              isLoading: _matcherLoading,
+              trailing: _matchedPolylines.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { Navigator.pop(ctx); _clearMatching(); }) : null,
+              onTap: () { Navigator.pop(ctx); _runMapMatching(); },
+            ),
+
+            // AnyPlacesSearchField demo
+            const SizedBox(height: 4),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(radius: 18, backgroundColor: Theme.of(context).colorScheme.primaryContainer, child: Icon(Icons.search, size: 18, color: Theme.of(context).colorScheme.primary)),
+              title: const Text('AnyPlacesSearchField'),
+              subtitle: const Text('Tap the main search bar — it uses the full widget'),
+            ),
+          ])),
+        ),
+      );
+    }));
+  }
+
+  Widget _advancedCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    bool isLoading = false,
+    VoidCallback? onTap,
+    Widget? trailing,
+    Widget? child,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            CircleAvatar(radius: 18, backgroundColor: Theme.of(context).colorScheme.primaryContainer, child: isLoading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            ])),
+                    if (trailing != null) trailing,
+            if (onTap != null && trailing == null) const Icon(Icons.chevron_right, size: 18),
+          ]),
+          if (child != null) ...[const SizedBox(height: 8), child],
+        ])),
+      ),
+    );
   }
 
   void _startAnimatePolyline() {
@@ -386,7 +660,18 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
   }
 
   @override
-  void dispose() { _navTimer?.cancel(); _animTimer?.cancel(); _searchCtrl.dispose(); _geoSub?.cancel(); _geoEngine.dispose(); _rerouter.dispose(); super.dispose(); }
+  void dispose() {
+    _navTimer?.cancel();
+    _animTimer?.cancel();
+    _searchCtrl.dispose();
+    _geoSub?.cancel();
+    _cameraSub?.cancel();
+    _simLocTimer?.cancel();
+    _simLocProvider?.dispose();
+    _geoEngine.dispose();
+    _rerouter.dispose();
+    super.dispose();
+  }
 
   // ── BUILD ──
 
@@ -398,14 +683,17 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
           key: ValueKey('${_backend}_${_mapStyle.name}'),
           adapter: _adapter,
           initialCamera: AnyCameraPosition(target: _hyderabadCenter, zoom: 12, tilt: _is3DView ? 45 : 0),
-          markers: _effectiveMarkers,
+          markers: _effectiveMarkers.map((m) => m.copyWith(onTap: () => setState(() => _selectedMarker = m))).toList(),
           polylines: _polylines,
           polygons: _showPolygons ? _demoPolygons : const [],
           circles: _showCircles ? _demoCircles : const [],
           onMapCreated: _onMapCreated,
-          onTap: (_) { if (_showSearch) setState(() => _showSearch = false); },
+          onTap: (_) { if (_showSearch) setState(() => _showSearch = false); setState(() => _selectedMarker = null); },
           onLongPress: (ll) { _controller?.animateCamera(AnyCameraPosition(target: ll, zoom: 18, tilt: 75)); setState(() => _is3DView = true); },
           myLocationEnabled: false, compassEnabled: true, tiltGesturesEnabled: true, rotateGesturesEnabled: true,
+          onError: (err) {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Map error: ${err.message}'), backgroundColor: Colors.red));
+          },
         )),
         if (_route != null && !_showSearch && !_isNavigating) _buildDirectionsPanel(),
       ]),
@@ -418,9 +706,28 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
         Positioned(top: 0, left: 0, right: 0, child: _buildNavBanner()),
         Positioned(bottom: 0, left: 0, right: 0, child: _buildNavBottomBar()),
       ],
+      // Feature 2: User location layer
+      if (_showLocationLayer && _simLocProvider != null)
+        AnyUserLocationLayer(controller: _controller, locationProvider: _simLocProvider!),
+      // Feature 3: Marker popup
+      if (_selectedMarker != null)
+        AnyMarkerPopup(
+          controller: _controller,
+          marker: _selectedMarker!,
+          onClose: () => setState(() => _selectedMarker = null),
+        ),
+      // Feature 1: Live zoom badge (camera stream demo)
+      Positioned(
+        left: 12, bottom: _route != null && !_isNavigating ? 270 : 90,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+          child: Text('z ${_liveZoom.toStringAsFixed(1)}', style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace')),
+        ),
+      ),
       // Geofence chip
       if (_lastGeoEvent != null && !_isNavigating)
-        Positioned(bottom: _route != null ? 270 : 90, left: 12, child: Chip(avatar: const Icon(Icons.fence, size: 16), label: Text(_lastGeoEvent!, style: const TextStyle(fontSize: 11)), onDeleted: () => setState(() => _lastGeoEvent = null))),
+        Positioned(bottom: _route != null ? 290 : 110, left: 12, child: Chip(avatar: const Icon(Icons.fence, size: 16), label: Text(_lastGeoEvent!, style: const TextStyle(fontSize: 11)), onDeleted: () => setState(() => _lastGeoEvent = null))),
     ]));
   }
 
@@ -484,6 +791,9 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
   // ── Controls ──
 
   Widget _buildControls() => Column(mainAxisSize: MainAxisSize.min, children: [
+    // Advanced features sheet
+    FloatingActionButton.small(heroTag: 'advanced', onPressed: _showAdvancedSheet, tooltip: 'Advanced Features', child: const Icon(Icons.science_outlined, size: 20)),
+    const SizedBox(height: 8),
     // Layers toggle sheet
     FloatingActionButton.small(heroTag: 'layers_sheet', onPressed: _toggleLayerSheet, tooltip: 'Layers', child: const Icon(Icons.stacked_line_chart, size: 20)),
     const SizedBox(height: 8),
@@ -618,4 +928,55 @@ class _MapDemoPageState extends State<MapDemoPage> with TickerProviderStateMixin
   }
 
   Widget _badge(String t, Color c) => Container(margin: const EdgeInsets.only(left: 6), padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1), decoration: BoxDecoration(color: c.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)), child: Text(t, style: TextStyle(fontSize: 9, color: c, fontWeight: FontWeight.bold)));
+}
+
+// ── Simulated location provider for demo ──
+
+/// A demo [AnyLocationProvider] that slowly moves a location around
+/// Hyderabad for the [AnyUserLocationLayer] demonstration.
+class _SimLocationProvider extends AnyLocationProvider {
+  final AnyLatLng center;
+  final _controller = StreamController<AnyUserLocation>.broadcast();
+  Timer? _timer;
+  double _angle = 0;
+
+  _SimLocationProvider({required this.center});
+
+  @override
+  Stream<AnyUserLocation> get locationStream => _controller.stream;
+
+  @override
+  Future<void> startUpdates({Duration interval = const Duration(seconds: 1), double distanceFilter = 5.0}) async {
+    _timer = Timer.periodic(const Duration(milliseconds: 800), (_) {
+      _angle = (_angle + 3) % 360;
+      final rad = _angle * math.pi / 180;
+      final lat = center.latitude + math.sin(rad) * 0.005;
+      final lng = center.longitude + math.cos(rad) * 0.005;
+      _controller.add(AnyUserLocation(
+        position: AnyLatLng(lat, lng),
+        heading: _angle,
+        accuracy: 12,
+        speed: 8.3,
+        timestamp: DateTime.now(),
+      ));
+    });
+  }
+
+  @override
+  Future<void> stopUpdates() async => _timer?.cancel();
+
+  @override
+  Future<AnyUserLocation?> getLastLocation() async => null;
+
+  @override
+  Future<bool> requestPermission() async => true;
+
+  @override
+  Future<bool> isServiceEnabled() async => true;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.close();
+  }
 }

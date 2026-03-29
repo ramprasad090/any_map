@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:ui' show Color;
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import '../models/lat_lng.dart';
 import '../models/polyline.dart';
 import '../models/polygon.dart';
@@ -63,6 +65,68 @@ class AnyGeoJsonLayer {
     this.strokeColor = const Color(0xFF4285F4),
     this.strokeWidth = 2.0,
   });
+
+  /// Create a layer from a raw GeoJSON string.
+  ///
+  /// ```dart
+  /// final layer = AnyGeoJsonLayer.fromString(
+  ///   id: 'my_layer',
+  ///   geoJson: '{"type":"FeatureCollection","features":[...]}',
+  /// );
+  /// ```
+  factory AnyGeoJsonLayer.fromString({
+    required String id,
+    required String geoJson,
+    Color pointColor = const Color(0xFFFF5722),
+    Color lineColor = const Color(0xFF4285F4),
+    double lineWidth = 3.0,
+    Color fillColor = const Color(0x334285F4),
+    Color strokeColor = const Color(0xFF4285F4),
+    double strokeWidth = 2.0,
+  }) =>
+      AnyGeoJsonLayer(
+        id: id,
+        geoJson: geoJson,
+        pointColor: pointColor,
+        lineColor: lineColor,
+        lineWidth: lineWidth,
+        fillColor: fillColor,
+        strokeColor: strokeColor,
+        strokeWidth: strokeWidth,
+      );
+
+  /// Create a layer by loading GeoJSON from a Flutter asset.
+  ///
+  /// The asset must be declared in `pubspec.yaml` under `flutter: assets:`.
+  ///
+  /// ```dart
+  /// final layer = await AnyGeoJsonLayer.fromAsset(
+  ///   id: 'borders',
+  ///   assetPath: 'assets/geojson/borders.geojson',
+  /// );
+  /// ```
+  static Future<AnyGeoJsonLayer> fromAsset({
+    required String id,
+    required String assetPath,
+    Color pointColor = const Color(0xFFFF5722),
+    Color lineColor = const Color(0xFF4285F4),
+    double lineWidth = 3.0,
+    Color fillColor = const Color(0x334285F4),
+    Color strokeColor = const Color(0xFF4285F4),
+    double strokeWidth = 2.0,
+  }) async {
+    final geoJson = await rootBundle.loadString(assetPath);
+    return AnyGeoJsonLayer(
+      id: id,
+      geoJson: geoJson,
+      pointColor: pointColor,
+      lineColor: lineColor,
+      lineWidth: lineWidth,
+      fillColor: fillColor,
+      strokeColor: strokeColor,
+      strokeWidth: strokeWidth,
+    );
+  }
 
   /// Parse the GeoJSON and return typed features.
   List<AnyGeoJsonFeature> parseFeatures() {

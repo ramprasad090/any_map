@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart' show EdgeInsets;
@@ -8,6 +9,21 @@ import 'package:latlong2/latlong.dart' as ll;
 /// AnyMapController implementation backed by flutter_map (OSM).
 class OsmController implements AnyMapController {
   final fm.MapController controller;
+
+  final _cameraStreamController = StreamController<AnyCameraPosition>.broadcast();
+  final _boundsStreamController = StreamController<AnyLatLngBounds>.broadcast();
+
+  @override
+  Stream<AnyCameraPosition> get cameraPositionStream => _cameraStreamController.stream;
+
+  @override
+  Stream<AnyLatLngBounds> get visibleBoundsStream => _boundsStreamController.stream;
+
+  /// Called by the adapter when the camera changes to push updates into the streams.
+  void notifyCameraChanged(AnyCameraPosition pos, AnyLatLngBounds bounds) {
+    if (!_cameraStreamController.isClosed) _cameraStreamController.add(pos);
+    if (!_boundsStreamController.isClosed) _boundsStreamController.add(bounds);
+  }
 
   OsmController({required this.controller});
 
@@ -120,12 +136,41 @@ class OsmController implements AnyMapController {
   }
 
   @override
+  Future<void> fitBoundsWithInsets(
+    AnyLatLngBounds bounds, {
+    EdgeInsets insets = const EdgeInsets.all(48),
+  }) async {
+    controller.fitCamera(
+      fm.CameraFit.bounds(
+        bounds: fm.LatLngBounds(
+          ll.LatLng(bounds.southwest.latitude, bounds.southwest.longitude),
+          ll.LatLng(bounds.northeast.latitude, bounds.northeast.longitude),
+        ),
+        padding: insets,
+      ),
+    );
+  }
+
+  @override
+  Future<void> animatePolyline(
+    AnyPolyline polyline, {
+    Duration duration = const Duration(seconds: 1),
+  }) async {
+    // OSM overlays are declarative; animation is handled at the widget level.
+  }
+
+  @override
+  Future<ui.Image?> takeSnapshot() async => null;
+
+  @override
   Future<void> setStyle(AnyMapStyle style) async {
     // OSM tiles don't support style changes — swap tile URL instead.
   }
 
   @override
   void dispose() {
+    _cameraStreamController.close();
+    _boundsStreamController.close();
     controller.dispose();
   }
 }

@@ -1,6 +1,6 @@
 name: any_map
 description: "Unified map abstraction for Flutter. One API to swap Google Maps, MapLibre, or OSM. Routing, traffic, geofencing, clustering, analytics, and 30+ features."
-version: 0.1.0
+version: 1.0.0
 homepage: https://github.com/ramprasad090/any_map
 repository: https://github.com/ramprasad090/any_map
 issue_tracker: https://github.com/ramprasad090/any_map/issues

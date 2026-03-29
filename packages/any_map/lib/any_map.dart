@@ -19,7 +19,7 @@
 ///   onTap: (latLng) => print('Tapped $latLng'),
 /// )
 /// ```
-library any_map;
+library;
 
 // Models
 export 'src/models/camera_position.dart';
@@ -36,6 +36,8 @@ export 'src/controllers/map_controller.dart';
 
 // Widget
 export 'src/widgets/any_map_widget.dart';
+export 'src/widgets/marker_popup.dart';
+export 'src/widgets/places_search_field.dart';
 
 // Clustering
 export 'src/clustering/cluster.dart';
@@ -49,10 +51,17 @@ export 'src/routing/routing_provider.dart';
 export 'src/routing/providers/osrm_provider.dart';
 export 'src/routing/providers/valhalla_provider.dart';
 export 'src/routing/providers/graphhopper_provider.dart';
+export 'src/routing/distance_matrix.dart';
+export 'src/routing/map_matcher.dart';
+export 'src/routing/route_optimizer.dart';
 
 // Search / Geocoding
 export 'src/search/search_provider.dart';
 export 'src/search/nominatim_provider.dart';
+export 'src/search/photon_provider.dart';
+export 'src/search/pelias_provider.dart';
+export 'src/search/opencage_provider.dart';
+export 'src/search/nearby_places.dart';
 export 'src/search/place_details.dart';
 
 // Traffic
@@ -60,6 +69,7 @@ export 'src/traffic/traffic_provider.dart';
 
 // Location
 export 'src/location/location_provider.dart';
+export 'src/location/user_location_layer.dart';
 
 // Geofencing
 export 'src/geofence/geofence.dart';
@@ -87,3 +97,12 @@ export 'src/social/crowdsourced_reports.dart';
 
 // Indoor Maps
 export 'src/indoor/indoor_map.dart';
+
+// Errors
+export 'src/errors/map_error.dart';
+
+// Offline / Tile caching
+export 'src/offline/cached_tile_provider.dart';
+
+// Testing
+export 'src/testing/fake_adapter.dart';
